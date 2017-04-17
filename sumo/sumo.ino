@@ -2,6 +2,16 @@
 #include <Wire.h>
 #include <VL53L0X.h>
 
+
+/*================================= TO DO =======================================
+  1. implement edge sensor code
+  1.1 If one edge is detected, reverse for a moment, spin in place ~60* away from edge detected
+  1.2 If two edges detected, reverse for a moment, spin in place ~90*. 
+  2. install start switch + implement countdown timer
+  3. implement different modes/behaviours?
+*/
+
+
 /*
  * PIN USE: 
    A0: Left Line Sensor (Analog)
@@ -24,15 +34,21 @@ long time_since_last_read;
 
 
 //================= robot control variables   ========================
-#define SPEED 0                            //max motor speed. range is 0-255. 255 = 100% duty PWM, which is battery input voltage (14.8v for 4cell lipo, 11.1v for 3cell lipo)
+#define SPEED 175                            //max motor speed. range is 0-255. 255 = 100% duty PWM, which is battery input voltage (14.8v for 4cell lipo, 11.1v for 3cell lipo)
+#define TURN_SPEED_FAST_WHEEL 160
+#define TURN_SPEED_SLOW_WHEEL 60
 #define TOF_MAX_RANGE 400                   // throw away ranges longer than this, to avoid noise and possibly sensing people too close to the ring. 
+enum L_OR_R {LEFT, RIGHT};
+L_OR_R last_tof_sighted;                    //holds last sensor that sighted something at non-infinity
+#define INFINITY_VALUE 550
+boolean sensed_this_loop;                   //true if at least one sensor detected non-infinity this loop execution
 
 
 //================= hardware variables        ========================
 #define pwm_left_motor          5           //power to left motor pin
 #define pwm_right_motor         6           //power to right motor pin
-#define dir_left_motor          4           //direction to left motor pin
-#define dir_right_motor         7           //direction to right motor pin
+#define dir_left_motor          4           //direction to left motor pin, HIGH = forward
+#define dir_right_motor         7           //direction to right motor pin, HIGH = forward
 
 #define left_qtr                2           //left edge sensor pin
 #define right_qtr               3           //right edge sensor pin
@@ -50,6 +66,7 @@ long time_since_last_read;
 
 #define TIMING_BUDGET_US              20000  //minimum internally limited to 20000, pushing this below 20000 returns it to the default of 33ms :-(
 
+
 //what are these for?
 int leftReadings[NUM_READINGS];
 int rightReadings[NUM_READINGS];
@@ -66,6 +83,12 @@ VL53L0X right_tSensor;                      //right TOF sensor object
 
 void setup()
 { 
+  //set initial motor direction
+  digitalWrite(dir_left_motor, HIGH);
+  digitalWrite(dir_right_motor, HIGH);
+
+  boolean sensed_this_loop = false;
+  
   //"Pins configured as OUTPUT with pinMode() are said to be in a low-impedance state. 
   //This means that they can provide a substantial amount of current (40ma) to other circuits. "
   pinMode(pwm_left_motor, OUTPUT);          
@@ -138,51 +161,94 @@ void setup()
 
 void loop()
 {
+  //================= enemy detection   ========================
   //timing test
   time_since_last_read = millis()-time_since_last_read;
   Serial.print("ms since last read : ");
   Serial.print(time_since_last_read);
-  Serial.print(" , ");
+  Serial.print(", ");
   time_since_last_read = millis();
 
   //edge sensor reading and serial output
   qtra.read(sensorValues);
   Serial.print("QTR Analog Values: ");
   Serial.print(sensorValues[0]);
-  Serial.print(" , ");
+  Serial.print(", ");
+  Serial.print(sensorValues[1]);
+  Serial.print(", ");
 
   //left sensor
   Serial.print("Time of flight distance (Left): ");
   int leftRead = left_tSensor.readRangeContinuousMillimeters();
+  //if left sensor sees enemy, drive left wheel forward
   if(leftRead < TOF_MAX_RANGE)
   {
+    digitalWrite(dir_left_motor, HIGH);
     analogWrite(pwm_left_motor, SPEED);
     Serial.print(leftRead);
+    last_tof_sighted = LEFT;
+    sensed_this_loop = true;
   }
   else
   {
     analogWrite(pwm_left_motor, 0);
-    Serial.print(550);
+    Serial.print(INFINITY_VALUE);
   }
-  Serial.print(" , ");
+  Serial.print(", ");
 
   //right sensor
   Serial.print("Time of flight distance (Right): ");
   int rightRead = right_tSensor.readRangeContinuousMillimeters(); 
   if(rightRead < TOF_MAX_RANGE)
   {
+    digitalWrite(dir_right_motor, HIGH);
     analogWrite(pwm_right_motor,SPEED);
     Serial.print(rightRead);
+    last_tof_sighted = RIGHT;
+    sensed_this_loop = true;
   }
   else
   {
     analogWrite(pwm_right_motor,0);
-    Serial.print(550);
+    Serial.print(INFINITY_VALUE);
   }
-  Serial.print(" , ");
+  Serial.print(", ");
   Serial.println();
 
+  //================= seeking unseen enemy routine   ========================
+  //if both sensors returned infinity this round
+  if (!sensed_this_loop)
+  {
+    Serial.println("Not sensed this loop!");
+    //if last sensor to see the enemy was LEFT side
+    if (last_tof_sighted == LEFT)
+    {
+      digitalWrite(dir_left_motor, LOW);
+      analogWrite(pwm_left_motor,TURN_SPEED_SLOW_WHEEL);
+      digitalWrite(dir_right_motor, HIGH);
+      analogWrite(pwm_right_motor,TURN_SPEED_FAST_WHEEL);
+      Serial.println("Turning LEFT; enemy out of sight, last seen on left side");
+    }
+    else //must be to the RIGHT
+    {
+      digitalWrite(dir_right_motor, LOW);
+      analogWrite(pwm_right_motor,TURN_SPEED_SLOW_WHEEL);
+      digitalWrite(dir_left_motor, HIGH);
+      analogWrite(pwm_left_motor,TURN_SPEED_FAST_WHEEL);
+      Serial.println("Turning RIGHT; enemy out of sight, last seen on right side");      
+    } 
+  }
+
+  //reset sensed_this_loop to allow a fresh look next loop
+  sensed_this_loop =false;
+
+  //delay to allow seeing the console messages better - remove for competition
+  //delay(100);
+
 }
+
+
+
 
 
 /*
