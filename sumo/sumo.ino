@@ -83,7 +83,7 @@ void setup()
 
   //Turn left sensor on, address it on I2C
   pinMode(left_x, INPUT);
-  digitalWrite(left_x, HIGH); //Drive high to turn on..
+  //one would imagine you'd want to "digitalWrite(left_x, HIGH);" here, but it's not needed, as the sensor's xshut is impedence driven
   delay(150);
   Serial.println("00");
   left_tSensor.init(true);
@@ -94,7 +94,7 @@ void setup()
 
   //Turn right sensor on, address it on I2C
   pinMode(right_x, INPUT);
-  digitalWrite(right_x, HIGH); //Drive high to turn on..
+  //one would imagine you'd want to "digitalWrite(right_x, HIGH);"  here, but it's not needed, as the sensor's xshut is impedence driven
   delay(150);
   right_tSensor.init(true);
   Serial.println("03");
