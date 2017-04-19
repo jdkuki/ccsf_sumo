@@ -38,10 +38,9 @@ long time_since_last_read;
 #define TURN_SPEED_FAST_WHEEL 160
 #define TURN_SPEED_SLOW_WHEEL 60
 #define TOF_MAX_RANGE 400                   // throw away ranges longer than this, to avoid noise and possibly sensing people too close to the ring. 
-enum L_OR_R {LEFT, RIGHT};
-L_OR_R last_tof_sighted;                    //holds last sensor that sighted something at non-infinity
+boolean last_tof_sighted_left;                    //holds last sensor that sighted something at non-infinity
 #define INFINITY_VALUE 550
-boolean sensed_this_loop;                   //true if at least one sensor detected non-infinity this loop execution
+boolean sensed_this_loop = false;                   //true if at least one sensor detected non-infinity this loop execution
 
 
 //================= hardware variables        ========================
@@ -83,11 +82,11 @@ VL53L0X right_tSensor;                      //right TOF sensor object
 
 void setup()
 { 
+  Serial.begin (2000000);  //fastest possible to avoid delays due to serial write lag
+  
   //set initial motor direction
   digitalWrite(dir_left_motor, HIGH);
   digitalWrite(dir_right_motor, HIGH);
-
-  boolean sensed_this_loop = false;
   
   //"Pins configured as OUTPUT with pinMode() are said to be in a low-impedance state. 
   //This means that they can provide a substantial amount of current (40ma) to other circuits. "
@@ -96,78 +95,14 @@ void setup()
   pinMode(left_x, OUTPUT); //Pin of right sensor XSHUT
   pinMode(right_x, OUTPUT); //Pin of left sensor XSHUT
 
-  //shut down the two TOF sensors so we can choose their addresses one at a time
-  digitalWrite(left_x, LOW); //Drive them low to turn them off..
-  digitalWrite(right_x, LOW); //
-  delay(500); //Chill for a sec
-  Wire.begin(); // Start i2c listening...
-  
-  Serial.begin (250000);
-
-  //Turn left sensor on, address it on I2C
-  pinMode(left_x, INPUT);
-  //one would imagine you'd want to "digitalWrite(left_x, HIGH);" here, but it's not needed, as the sensor's xshut is impedence driven
-  delay(150);
-  Serial.println("00");
-  left_tSensor.init(true);
-  Serial.println("01");
-  delay(100);
-  left_tSensor.setAddress((uint8_t)left_addr);
-  Serial.println("02");
-
-  //Turn right sensor on, address it on I2C
-  pinMode(right_x, INPUT);
-  //one would imagine you'd want to "digitalWrite(right_x, HIGH);"  here, but it's not needed, as the sensor's xshut is impedence driven
-  delay(150);
-  right_tSensor.init(true);
-  Serial.println("03");
-  delay(100);
-  right_tSensor.setAddress((uint8_t)right_addr);
-  Serial.println("04");
-  Serial.println("addresses set");
-
-  //print addresses of found sensors
-  Serial.println ("I2C scanner. Scanning ...");
-  byte count = 0;
-  for (byte i = 1; i < 120; i++)
-  {
-    Wire.beginTransmission (i);
-    if (Wire.endTransmission () == 0)
-    {
-      Serial.print ("Found address: ");
-      Serial.print (i, DEC);
-      Serial.print (" (0x");
-      Serial.print (i, HEX);
-      Serial.println (")");
-      count++;
-      delay (1);  // maybe unneeded?
-    } // end of good response
-  } // end of for loop
-  
-  Serial.println ("Done.");
-  Serial.print ("Found ");
-  Serial.print (count, DEC);
-  Serial.println (" device(s).");
-  delay(50);
-
-  // set timing mode for sensors, allowing a short budget in microseconds. 20,000us = 20ms = 50Hz read rate. 20ms is apparently the minimum that works. 
-  //wondering if we should try something smaller to increase the refresh rate, since we don't care at all about range, just presence of an object.
-  left_tSensor.setMeasurementTimingBudget(TIMING_BUDGET_US);
-  left_tSensor.startContinuous();
-  right_tSensor.setMeasurementTimingBudget(TIMING_BUDGET_US);
-  right_tSensor.startContinuous();
-  delay(500);
+  //start TOF sensors
+  restart_tof_sensors(); 
 }
 
 void loop()
 {
   //================= enemy detection   ========================
-  //timing test
-  time_since_last_read = millis()-time_since_last_read;
-  Serial.print("ms since last read : ");
-  Serial.print(time_since_last_read);
-  Serial.print(", ");
-  time_since_last_read = millis();
+  measure_time_since_last_call();
 
   //edge sensor reading and serial output
   qtra.read(sensorValues);
@@ -180,13 +115,17 @@ void loop()
   //left sensor
   Serial.print("Time of flight distance (Left): ");
   int leftRead = left_tSensor.readRangeContinuousMillimeters();
+  Serial.print("Time of flight distance (Right): ");
+  int rightRead = right_tSensor.readRangeContinuousMillimeters();
+  
   //if left sensor sees enemy, drive left wheel forward
+  
   if(leftRead < TOF_MAX_RANGE)
   {
     digitalWrite(dir_left_motor, HIGH);
     analogWrite(pwm_left_motor, SPEED);
     Serial.print(leftRead);
-    last_tof_sighted = LEFT;
+    last_tof_sighted_left= true;
     sensed_this_loop = true;
   }
   else
@@ -197,14 +136,13 @@ void loop()
   Serial.print(", ");
 
   //right sensor
-  Serial.print("Time of flight distance (Right): ");
-  int rightRead = right_tSensor.readRangeContinuousMillimeters(); 
+   
   if(rightRead < TOF_MAX_RANGE)
   {
     digitalWrite(dir_right_motor, HIGH);
     analogWrite(pwm_right_motor,SPEED);
     Serial.print(rightRead);
-    last_tof_sighted = RIGHT;
+    last_tof_sighted_left= false;
     sensed_this_loop = true;
   }
   else
@@ -221,7 +159,7 @@ void loop()
   {
     Serial.println("Not sensed this loop!");
     //if last sensor to see the enemy was LEFT side
-    if (last_tof_sighted == LEFT)
+    if (last_tof_sighted_left== true)
     {
       digitalWrite(dir_left_motor, LOW);
       analogWrite(pwm_left_motor,TURN_SPEED_SLOW_WHEEL);
@@ -248,16 +186,74 @@ void loop()
 }
 
 
-
-
-
-/*
- * unused function? no yet useful?
-void readValues(VL53L0X* sensor, uint32_t* dest, size_t numReadings)
+void restart_tof_sensors()
 {
-  for(int i = 0; i < numReadings; i++)
+  //shut down the two TOF sensors so we can choose their addresses one at a time
+  digitalWrite(left_x, LOW); //Drive them low to turn them off..
+  digitalWrite(right_x, LOW); //
+  delay(1); //Chill for a sec
+  Wire.begin(); // Start i2c listening...
+  
+  //Turn left sensor on, address it on I2C
+  pinMode(left_x, INPUT);
+  //one would imagine you'd want to "digitalWrite(left_x, HIGH);" here, but it's not needed, as the sensor's xshut is impedence driven
+  delay(1);
+  Serial.println("00");
+  left_tSensor.init(true);
+  Serial.println("01");
+  delay(1);
+  left_tSensor.setAddress((uint8_t)left_addr);
+  Serial.println("02");
+
+  //Turn right sensor on, address it on I2C
+  pinMode(right_x, INPUT);
+  //one would imagine you'd want to "digitalWrite(right_x, HIGH);"  here, but it's not needed, as the sensor's xshut is impedence driven
+  delay(1);
+  right_tSensor.init(true);
+  Serial.println("03");
+  delay(1);
+  right_tSensor.setAddress((uint8_t)right_addr);
+  Serial.println("04");
+  Serial.println("addresses set");
+
+  //print addresses of found sensors
+  Serial.println ("I2C scanner. Scanning ...");
+  byte count = 0;
+  for (byte i = 1; i < 120; i++)
   {
-    *(dest + i ) = sensor->readRangeSingleMillimeters();
-  }
+    Wire.beginTransmission (i);
+    if (Wire.endTransmission () == 0)
+    {
+      Serial.print ("Found address: ");
+      Serial.print (i, DEC);
+      Serial.print (" (0x");
+      Serial.print (i, HEX);
+      Serial.println (")");
+      count++;
+    } // end of good response
+  } // end of for loop
+  
+  Serial.println ("Done.");
+  Serial.print ("Found ");
+  Serial.print (count, DEC);
+  Serial.println (" device(s).");
+
+  // set timing mode for sensors, allowing a short budget in microseconds. 20,000us = 20ms = 50Hz read rate. 20ms is apparently the minimum that works. 
+  //wondering if we should try something smaller to increase the refresh rate, since we don't care at all about range, just presence of an object.
+  left_tSensor.setMeasurementTimingBudget(TIMING_BUDGET_US);
+  left_tSensor.startContinuous();
+  right_tSensor.setMeasurementTimingBudget(TIMING_BUDGET_US);
+  right_tSensor.startContinuous();
+  
 }
-*/
+
+void measure_time_since_last_call()
+{
+  //timing test
+  time_since_last_read = millis()-time_since_last_read;
+  Serial.print("ms since last read : ");
+  Serial.print(time_since_last_read);
+  Serial.print(", ");
+  time_since_last_read = millis();
+}
+
