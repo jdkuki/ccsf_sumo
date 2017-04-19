@@ -114,14 +114,10 @@ void loop()
   Serial.print(sensorValues[1]);
   Serial.print(", ");
 
-  //left sensor
+  //===== left sensor
   Serial.print("Time of flight distance (Left): ");
   int leftRead = left_tSensor.readRangeContinuousMillimeters();
-  Serial.print("Time of flight distance (Right): ");
-  int rightRead = right_tSensor.readRangeContinuousMillimeters();
-  
-  //if left sensor sees enemy, drive left wheel forward
-  
+ 
   if(leftRead < TOF_MAX_RANGE)
   {
     if(!leftOn) //Debug code: See if spamming analogWrites() is causing our sensors to fail;
@@ -146,8 +142,10 @@ void loop()
   }
   Serial.print(", ");
 
-  //right sensor
-   
+  //===== right sensor
+  Serial.print("Time of flight distance (Right): ");
+  int rightRead = right_tSensor.readRangeContinuousMillimeters();
+  
   if(rightRead < TOF_MAX_RANGE)
   {
     if(!rightOn) //Debug code: See if spamming analogWrites() is causing our sensors to fail;
