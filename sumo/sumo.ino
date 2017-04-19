@@ -79,6 +79,8 @@ unsigned int sensorValues[NUM_QTR_SENSORS]; // 2 qtr sensors, 2 sent to array co
 VL53L0X left_tSensor;                       //left TOF sensor object
 VL53L0X right_tSensor;                      //right TOF sensor object
 
+bool leftOn = false; //Use to know if we should change the pwm speed of each motor
+bool rightOn = false;
 
 void setup()
 { 
@@ -122,16 +124,21 @@ void loop()
   
   if(leftRead < TOF_MAX_RANGE)
   {
-    digitalWrite(dir_left_motor, HIGH);
-    analogWrite(pwm_left_motor, SPEED);
+    if(!leftOn) //Debug code: See if spamming analogWrites() is causing our sensors to fail;
+    {
+      digitalWrite(dir_left_motor, HIGH);
+      analogWrite(pwm_left_motor, SPEED);
+    }
     Serial.print(leftRead);
     last_tof_sighted_left= true;
     sensed_this_loop = true;
+    leftOn = true;
   }
   else
   {
     analogWrite(pwm_left_motor, 0);
     Serial.print(INFINITY_VALUE);
+    leftOn = false;
   }
   Serial.print(", ");
 
@@ -139,16 +146,21 @@ void loop()
    
   if(rightRead < TOF_MAX_RANGE)
   {
-    digitalWrite(dir_right_motor, HIGH);
-    analogWrite(pwm_right_motor,SPEED);
+    if(!rightOn) //Debug code: See if spamming analogWrites() is causing our sensors to fail;
+    {
+      digitalWrite(dir_right_motor, HIGH);
+      analogWrite(pwm_right_motor,SPEED);
+    }
     Serial.print(rightRead);
     last_tof_sighted_left= false;
     sensed_this_loop = true;
+    rightOn = true;
   }
   else
   {
     analogWrite(pwm_right_motor,0);
     Serial.print(INFINITY_VALUE);
+    rightOn = false;
   }
   Serial.print(", ");
   Serial.println();
