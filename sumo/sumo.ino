@@ -134,6 +134,10 @@ void loop()
     sensed_this_loop = true;
     leftOn = true;
   }
+  else if (leftRead <=0)
+  {
+    restart_tof_sensors();
+  }
   else
   {
     analogWrite(pwm_left_motor, 0);
@@ -155,6 +159,10 @@ void loop()
     last_tof_sighted_left= false;
     sensed_this_loop = true;
     rightOn = true;
+  }
+  else if (rightRead <=0)
+  {
+    restart_tof_sensors();
   }
   else
   {
@@ -200,6 +208,14 @@ void loop()
 
 void restart_tof_sensors()
 {
+
+  Serial.println("================= restarting TOF sensors ========================");
+  //turn off motors
+  digitalWrite(dir_right_motor, HIGH);
+  analogWrite(pwm_right_motor,0);
+  digitalWrite(dir_left_motor, HIGH);
+  analogWrite(pwm_left_motor,0);
+  
   //shut down the two TOF sensors so we can choose their addresses one at a time
   digitalWrite(left_x, LOW); //Drive them low to turn them off..
   digitalWrite(right_x, LOW); //
