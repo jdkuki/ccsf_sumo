@@ -37,11 +37,11 @@ bool rightOn = false;
 
 //================= robot control variables   ========================
 #define SPEED 175                            //max motor speed. range is 0-255. 255 = 100% duty PWM, which is battery input voltage (14.8v for 4cell lipo, 11.1v for 3cell lipo)
-#define TURN_SPEED_FAST_WHEEL 120
-#define TURN_SPEED_SLOW_WHEEL 60
+#define TURN_SPEED_FAST_WHEEL 150
+#define TURN_SPEED_SLOW_WHEEL 75
 #define TOF_MAX_RANGE 400                   // throw away ranges longer than this, to avoid noise and possibly sensing people too close to the ring. 
 #define INFINITY_VALUE 550
-#define QTR_LIMIT 400
+#define QTR_LIMIT 300                       //black is considered anything greater than this value. 
 
 boolean last_tof_sighted_left;                    //holds last sensor that sighted something at non-infinity
 boolean sensed_this_loop = false;                   //true if at least one sensor detected non-infinity this loop execution
@@ -200,34 +200,34 @@ void drive_motors(char instruction)
       digitalWrite(dir_left_motor, LOW);
       analogWrite(pwm_left_motor, SPEED / 2);
       break;
-    case '>':
+    case '<':
       Serial.print("[Left]");
       digitalWrite(dir_right_motor, HIGH);
-      analogWrite(pwm_right_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_right_motor, TURN_SPEED_FAST_WHEEL/2);
       digitalWrite(dir_left_motor, LOW);
       analogWrite(pwm_left_motor, TURN_SPEED_SLOW_WHEEL);
       break;
-    case '<':
+    case '>':
       Serial.print("[Right]");
       digitalWrite(dir_left_motor, HIGH);
-      analogWrite(pwm_left_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_left_motor, TURN_SPEED_FAST_WHEEL/2);
       digitalWrite(dir_right_motor, LOW);
       analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       break;
     case '(':
       Serial.print("[180 left-200ms delay]");
       digitalWrite(dir_right_motor, HIGH);
-      analogWrite(pwm_right_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       digitalWrite(dir_left_motor, LOW);
-      analogWrite(pwm_left_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_left_motor, TURN_SPEED_SLOW_WHEEL);
       delay(200);
       break;
     case ')':
       Serial.print("[180 right-200ms delay]");
       digitalWrite(dir_right_motor, LOW);
-      analogWrite(pwm_right_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       digitalWrite(dir_left_motor, HIGH);
-      analogWrite(pwm_left_motor, TURN_SPEED_FAST_WHEEL);
+      analogWrite(pwm_left_motor, TURN_SPEED_SLOW_WHEEL/2);
       delay(200);
       break;
     case 'S':
