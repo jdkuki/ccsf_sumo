@@ -36,16 +36,18 @@ bool rightOn = false;
 
 
 //================= robot control variables   ========================
-#define SPEED 175                            //max motor speed. range is 0-255. 255 = 100% duty PWM, which is battery input voltage (14.8v for 4cell lipo, 11.1v for 3cell lipo)
+#define SPEED                 175                   //max motor speed. range is 0-255. 255 = 100% duty PWM, which is battery input voltage (14.8v for 4cell lipo, 11.1v for 3cell lipo)
 #define TURN_SPEED_FAST_WHEEL 150
 #define TURN_SPEED_SLOW_WHEEL 75
-#define TOF_MAX_RANGE 400                   // throw away ranges longer than this, to avoid noise and possibly sensing people too close to the ring. 
-#define INFINITY_VALUE 550
-#define QTR_LIMIT 300                       //black is considered anything greater than this value. 
+#define TOF_MAX_RANGE         400                   // throw away ranges longer than this, to avoid noise and possibly sensing people too close to the ring. 
+#define INFINITY_VALUE        550
+#define QTR_LIMIT             100                   //black is considered anything greater than this value. 
+#define DELAY_U_TURN          200
+#define DELAY_U_TURN_REVERSE  200
 
-boolean last_tof_sighted_left;                    //holds last sensor that sighted something at non-infinity
-boolean sensed_this_loop = false;                   //true if at least one sensor detected non-infinity this loop execution
-char motor_command = ' ';
+boolean last_tof_sighted_left;                     //holds last sensor that sighted something at non-infinity
+boolean sensed_this_loop = false;                  //true if at least one sensor detected non-infinity this loop execution
+char motor_command;
 int leftRead;
 int rightRead;
 
@@ -100,16 +102,19 @@ void loop()
   //================= enemy detection   ========================
   measure_time_since_last_call();
 
-  read_sensors();
+  read_TOF_sensors();
+  read_edge_sensors();
 
-  //================ motor control logic ======================
-  //==check edge sensors for white, left is [0], right is [1],
-  if (sensorValues[0] < QTR_LIMIT)
-  {motor_command = ')';}
+  //================ motor control decision logic ======================
 
-  else if (sensorValues[1] < QTR_LIMIT)
-  {motor_command = '(';}
-
+  //==if error in readings
+  if (leftRead < 0 || rightRead < 0)
+  {
+    restart_tof_sensors();
+    motor_command = 'S';
+    Serial.println("=================== ERROR: RESETTING TOF SENSORS =================");
+  }
+  
   //==if seen left, but not right
   else if (leftRead < TOF_MAX_RANGE && rightRead >= INFINITY_VALUE)
   {
@@ -128,12 +133,18 @@ void loop()
 
   //==if seen left AND right
   else if (leftRead < TOF_MAX_RANGE && rightRead < TOF_MAX_RANGE)
-  {motor_command = 'F';}
+  {
+    motor_command = 'F';
+  }
 
 
-  //==if error in readings
-  else if (leftRead < 0 || rightRead < 0)
-  {restart_tof_sensors();}
+
+  //==check edge sensors for white, left is [0], right is [1],
+  if (sensorValues[0] < QTR_LIMIT)
+  {motor_command = ')';}
+
+  else if (sensorValues[1] < QTR_LIMIT)
+  {motor_command = '(';}
 
   //==if not seen at all
   else 
@@ -147,13 +158,11 @@ void loop()
   //reset motor command. should always apply somethign each round, but if the bot sits still, we know we missed something.
   motor_command = ' ';
 
-  //delay to allow seeing the console messages better - remove for competition
-  //delay(100);
   Serial.println();
 
 }
 
-void read_sensors()
+void read_edge_sensors()
 {
   //edge sensor reading and serial output
   qtra.read(sensorValues);
@@ -161,8 +170,11 @@ void read_sensors()
   Serial.print(sensorValues[0]);
   Serial.print(", Right: ");
   Serial.print(sensorValues[1]);
-  Serial.print(", ");
+  Serial.println();
+}
 
+void read_TOF_sensors()
+{
   //===== read TOF sensors
   Serial.print("Time of flight distance (Left): ");
   leftRead = left_tSensor.readRangeContinuousMillimeters();
@@ -178,7 +190,7 @@ void read_sensors()
   {
     rightRead = INFINITY_VALUE;
   }
-  Serial.print(rightRead);
+  Serial.println(rightRead);
 }
 
 
@@ -215,20 +227,34 @@ void drive_motors(char instruction)
       analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       break;
     case '(':
+      Serial.print("[Reverse]");
+      digitalWrite(dir_right_motor, LOW);
+      analogWrite(pwm_right_motor, SPEED / 2);
+      digitalWrite(dir_left_motor, LOW);
+      analogWrite(pwm_left_motor, SPEED / 2);
+      delay(DELAY_U_TURN_REVERSE);
+      
       Serial.print("[180 left-200ms delay]");
       digitalWrite(dir_right_motor, HIGH);
       analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       digitalWrite(dir_left_motor, LOW);
       analogWrite(pwm_left_motor, TURN_SPEED_SLOW_WHEEL);
-      delay(200);
+      delay(DELAY_U_TURN);
       break;
     case ')':
+      Serial.print("[Reverse]");
+      digitalWrite(dir_right_motor, LOW);
+      analogWrite(pwm_right_motor, SPEED / 2);
+      digitalWrite(dir_left_motor, LOW);
+      analogWrite(pwm_left_motor, SPEED / 2);
+      delay(DELAY_U_TURN_REVERSE);
+      
       Serial.print("[180 right-200ms delay]");
       digitalWrite(dir_right_motor, LOW);
       analogWrite(pwm_right_motor, TURN_SPEED_SLOW_WHEEL);
       digitalWrite(dir_left_motor, HIGH);
       analogWrite(pwm_left_motor, TURN_SPEED_SLOW_WHEEL/2);
-      delay(200);
+      delay(DELAY_U_TURN);
       break;
     case 'S':
       Serial.print("[stop]");
@@ -238,7 +264,9 @@ void drive_motors(char instruction)
       analogWrite(pwm_left_motor, 0);
       break;
     default:
-      Serial.println("[INVALID MOTOR INSTRUCTION!]");
+      Serial.print("[INVALID MOTOR INSTRUCTION! \']");
+      Serial.print(instruction);
+      Serial.println("\'");
       break;
 
   }
@@ -277,14 +305,22 @@ void restart_tof_sensors()
   //drive_motors(motor_command);
 
   //shut down the two TOF sensors so we can choose their addresses one at a time
-  digitalWrite(left_x, LOW); //Drive them low to turn them off..
+  
+  //Drive them low to turn them off..
+  digitalWrite(left_x, LOW); 
   digitalWrite(right_x, LOW); //
+
+  //switch them to HIGH impedence interanal resistor mode to shut them down.
+  //pinMode(left_x, OUTPUT);
+  //pinMode(right_x, OUTPUT);
+  
   delay(1); //Chill for a sec
   Wire.begin(); // Start i2c listening...
 
   //Turn left sensor on, address it on I2C
+  //pinMode (x, INUT) switches the internal arduino pullups resistor off, so the pin is "low impedence" mode
   pinMode(left_x, INPUT);
-  //one would imagine you'd want to "digitalWrite(left_x, HIGH);" here, but it's not needed, as the sensor's xshut is impedence driven
+  //one would imagine you'd want to "digitalWrite(left_x, HIGH);" here, but it's not needed, AND WILL DAMAGE THE SENSOR!
   delay(1);
   Serial.println("00");
   left_tSensor.init(true);
@@ -294,8 +330,9 @@ void restart_tof_sensors()
   Serial.println("02");
 
   //Turn right sensor on, address it on I2C
+  //pinMode (x, INUT) switches the internal arduino pullups resistor off, so the pin is "low impedence" mode
   pinMode(right_x, INPUT);
-  //one would imagine you'd want to "digitalWrite(right_x, HIGH);"  here, but it's not needed, as the sensor's xshut is impedence driven
+  //one would imagine you'd want to "digitalWrite(right_x, HIGH);"  here, but it's not needed, AND WILL DAMAGE THE SENSOR!
   delay(1);
   right_tSensor.init(true);
   Serial.println("03");
